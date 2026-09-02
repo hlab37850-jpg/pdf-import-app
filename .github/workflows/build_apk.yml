@@ -38,12 +38,20 @@ jobs:
           python3-pip \
           python3-venv
     
+    - name: Accept Android SDK licenses
+      run: |
+        yes | sdkmanager --licenses || true
+        mkdir -p $HOME/.android
+        echo "sdk.dir=$ANDROID_HOME" > local.properties
+    
     - name: Install Buildozer
       run: |
         pip install --upgrade buildozer
         pip install cython==0.29.36
     
     - name: Build APK
+      env:
+        ANDROID_ACCEPT_SDK_LICENSE: "y"
       run: |
         buildozer android debug
     

@@ -4,15 +4,11 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.webkit.ValueCallback;
-import android.webkit.WebChromeClient;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.annotation.SuppressLint;
-import android.content.ContentResolver;
-import android.database.Cursor;
-import android.provider.OpenableColumns;
 import android.util.Base64;
 import android.util.Log;
 import android.widget.Toast;
@@ -22,9 +18,9 @@ import java.io.InputStream;
 
 public class MainActivity extends Activity {
     private WebView webView;
-    private ValueCallback<Uri[]> filePathCallback;
-    private static final int FILE_CHOOSER_REQUEST = 100;
+    private static final int PICK_PDF_REQUEST = 1;
     private static final String TAG = "PDFImport";
+    private String pendingFileData = null;
     
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
@@ -34,78 +30,86 @@ public class MainActivity extends Activity {
         webView = new WebView(this);
         webView.setWebViewClient(new WebViewClient());
         
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> callback, FileChooserParams params) {
-                Log.d(TAG, "onShowFileChooser called");
-                
-                if (filePathCallback != null) {
-                    filePathCallback.onReceiveValue(null);
-                    filePathCallback = null;
-                }
-                
-                filePathCallback = callback;
-                
-                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("application/pdf");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf", "application/x-pdf"});
-                
-                try {
-                    startActivityForResult(Intent.createChooser(intent, "Select PDF File"), FILE_CHOOSER_REQUEST);
-                    return true;
-                } catch (Exception e) {
-                    Log.e(TAG, "Error opening file chooser", e);
-                    Toast.makeText(MainActivity.this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                    filePathCallback = null;
-                    return false;
-                }
-            }
-        });
-        
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
-        settings.setLoadWithOverviewMode(true);
-        settings.setUseWideViewPort(true);
-        settings.setSupportZoom(true);
-        settings.setBuiltInZoomControls(true);
-        settings.setDisplayZoomControls(false);
-        settings.setAllowFileAccessFromFileURLs(true);
-        settings.setAllowUniversalAccessFromFileURLs(true);
-        settings.setJavaScriptCanOpenWindowsAutomatically(true);
+        
+        // إضافة JavaScript Interface للتواصل مع HTML
+        webView.addJavascriptInterface(new JavaScriptInterface(), "AndroidBridge");
         
         webView.loadUrl("file:///android_asset/www/index.html");
         
         setContentView(webView);
     }
     
+    // JavaScript Interface للتواصل مع HTML
+    private class JavaScriptInterface {
+        @JavascriptInterface
+        public void openFilePicker() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("application/pdf");
+                    startActivityForResult(Intent.createChooser(intent, "Select PDF"), PICK_PDF_REQUEST);
+                }
+            });
+        }
+        
+        @JavascriptInterface
+        public String getSelectedFile() {
+            return pendingFileData;
+        }
+        
+        @JavascriptInterface
+        public void clearSelectedFile() {
+            pendingFileData = null;
+        }
+    }
+    
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         
-        Log.d(TAG, "onActivityResult: requestCode=" + requestCode + ", resultCode=" + resultCode);
-        
-        if (requestCode == FILE_CHOOSER_REQUEST) {
-            if (filePathCallback == null) {
-                Log.e(TAG, "filePathCallback is null");
-                return;
+        if (requestCode == PICK_PDF_REQUEST && resultCode == Activity.RESULT_OK) {
+            if (data != null && data.getData() != null) {
+                try {
+                    Uri uri = data.getData();
+                    byte[] fileBytes = readBytes(uri);
+                    String base64 = Base64.encodeToString(fileBytes, Base64.NO_WRAP);
+                    pendingFileData = base64;
+                    
+                    // إرسال الملف إلى JavaScript
+                    String js = "javascript:receiveFile('" + base64 + "')";
+                    webView.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            webView.evaluateJavascript(js, null);
+                        }
+                    });
+                    
+                } catch (Exception e) {
+                    Log.e(TAG, "Error reading file", e);
+                    Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                }
             }
-            
-            Uri[] results = null;
-            
-            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
-                Uri uri = data.getData();
-                Log.d(TAG, "Selected URI: " + uri.toString());
-                results = new Uri[]{uri};
-            }
-            
-            filePathCallback.onReceiveValue(results);
-            filePathCallback = null;
         }
+    }
+    
+    private byte[] readBytes(Uri uri) throws Exception {
+        InputStream inputStream = getContentResolver().openInputStream(uri);
+        ByteArrayOutputStream byteBuffer = new ByteArrayOutputStream();
+        
+        byte[] buffer = new byte[1024 * 1024]; // 1MB buffer
+        int len;
+        while ((len = inputStream.read(buffer)) != -1) {
+            byteBuffer.write(buffer, 0, len);
+        }
+        
+        return byteBuffer.toByteArray();
     }
     
     @Override
@@ -115,13 +119,5 @@ public class MainActivity extends Activity {
         } else {
             super.onBackPressed();
         }
-    }
-    
-    @Override
-    protected void onDestroy() {
-        if (webView != null) {
-            webView.destroy();
-        }
-        super.onDestroy();
     }
 }

@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>PDF Import</title>
     <script src="js/pdf.min.js"></script>
     <style>
@@ -11,8 +11,6 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #f5f5f5;
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
         }
         .header {
             background: #6200EE;
@@ -21,9 +19,11 @@
             text-align: center;
             font-size: 20px;
             font-weight: bold;
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
         .container {
-            flex: 1;
             padding: 16px;
             max-width: 800px;
             margin: 0 auto;
@@ -46,42 +46,18 @@
             font-weight: 500;
             cursor: pointer;
             margin-bottom: 10px;
+            -webkit-tap-highlight-color: transparent;
         }
+        .btn:active { opacity: 0.8; }
         .btn-primary { background: #2196F3; color: white; }
         .btn-success { background: #4CAF50; color: white; }
         .btn:disabled { opacity: 0.5; }
-        .status {
-            padding: 12px;
-            text-align: center;
-            color: #666;
-            font-size: 14px;
-        }
+        .status { padding: 12px; text-align: center; color: #666; font-size: 14px; }
         .progress-container { display: none; margin: 10px 0; }
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: #e0e0e0;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        .progress-fill {
-            height: 100%;
-            background: #4CAF50;
-            width: 0%;
-            transition: width 0.3s;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin: 10px 0;
-        }
-        .stat-card {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 12px;
-            text-align: center;
-        }
+        .progress-bar { width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; }
+        .progress-fill { height: 100%; background: #4CAF50; width: 0%; transition: width 0.3s; }
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 10px 0; }
+        .stat-card { background: #f8f9fa; border-radius: 8px; padding: 12px; text-align: center; }
         .stat-value { font-size: 24px; font-weight: bold; color: #6200EE; }
         .stat-label { font-size: 12px; color: #666; }
         .output {
@@ -92,6 +68,7 @@
             white-space: pre-wrap;
             max-height: 400px;
             overflow-y: auto;
+            word-wrap: break-word;
         }
         .rtl { direction: rtl; text-align: right; }
     </style>
@@ -101,9 +78,9 @@
     
     <div class="container">
         <div class="card">
-            <input type="file" id="fileInput" accept="application/pdf,.pdf" style="display:none">
-            <button class="btn btn-primary" id="selectBtn">📂 Select PDF File</button>
-            <button class="btn btn-success" id="processBtn" disabled>🔄 Process PDF</button>
+            <input type="file" id="fileInput" accept=".pdf,application/pdf" style="display:none">
+            <button class="btn btn-primary" id="selectBtn" type="button">📂 Select PDF File</button>
+            <button class="btn btn-success" id="processBtn" type="button" disabled>🔄 Process PDF</button>
             <div class="status" id="status">No file selected</div>
             <div class="progress-container" id="progressContainer">
                 <div class="progress-bar">
@@ -142,25 +119,33 @@
         
         let selectedFile = null;
         
-        // استخدام addEventListener بدلاً من onclick
-        document.getElementById('selectBtn').addEventListener('click', function() {
+        // زر اختيار الملف
+        document.getElementById('selectBtn').addEventListener('click', function(e) {
+            e.preventDefault();
             document.getElementById('fileInput').click();
         });
         
+        // عند اختيار ملف
         document.getElementById('fileInput').addEventListener('change', function(e) {
             if (e.target.files && e.target.files.length > 0) {
                 selectedFile = e.target.files[0];
                 document.getElementById('status').textContent = '📄 Selected: ' + selectedFile.name;
+                document.getElementById('status').style.color = '#4CAF50';
                 document.getElementById('processBtn').disabled = false;
             }
         });
         
-        document.getElementById('processBtn').addEventListener('click', function() {
+        // زر المعالجة
+        document.getElementById('processBtn').addEventListener('click', function(e) {
+            e.preventDefault();
             processPDF();
         });
         
         async function processPDF() {
-            if (!selectedFile) return;
+            if (!selectedFile) {
+                alert('Please select a PDF file first');
+                return;
+            }
             
             const processBtn = document.getElementById('processBtn');
             const selectBtn = document.getElementById('selectBtn');
@@ -172,6 +157,7 @@
             selectBtn.disabled = true;
             progressContainer.style.display = 'block';
             status.textContent = '⏳ Processing...';
+            status.style.color = '#2196F3';
             
             try {
                 const arrayBuffer = await selectedFile.arrayBuffer();
@@ -189,12 +175,9 @@
                     const textContent = await page.getTextContent();
                     let pageText = '';
                     
-                    textContent.items.forEach((item, index) => {
+                    textContent.items.forEach((item) => {
                         if (item.str) {
-                            pageText += item.str;
-                            if (index < textContent.items.length - 1) {
-                                pageText += ' ';
-                            }
+                            pageText += item.str + ' ';
                         }
                     });
                     
@@ -209,7 +192,7 @@
                     
                     if (pageText.split('\n').length > 3) tablesCount++;
                     
-                    fullText += '\n===== Page ' + i + ' =====\n' + pageText + '\n';
+                    fullText += '\n===== Page ' + i + ' =====\n' + pageText.trim() + '\n';
                 }
                 
                 document.getElementById('pagesCount').textContent = pdf.numPages;
@@ -224,15 +207,26 @@
                 
                 document.getElementById('resultsCard').style.display = 'block';
                 status.textContent = '✅ Complete!';
+                status.style.color = '#4CAF50';
                 
             } catch (error) {
                 status.textContent = '❌ Error: ' + error.message;
+                status.style.color = '#F44336';
+                console.error('Error:', error);
             }
             
             processBtn.disabled = false;
             selectBtn.disabled = false;
             progressContainer.style.display = 'none';
         }
+        
+        // بديل إذا لم يعمل file input
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'fileSelected') {
+                // معالجة الملف من Android
+                console.log('File from Android:', event.data);
+            }
+        });
     </script>
 </body>
 </html>

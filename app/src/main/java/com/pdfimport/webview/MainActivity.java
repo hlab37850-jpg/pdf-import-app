@@ -10,15 +10,23 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.annotation.SuppressLint;
-import android.provider.OpenableColumns;
+import android.content.ContentResolver;
 import android.database.Cursor;
+import android.provider.OpenableColumns;
+import android.util.Base64;
+import android.util.Log;
+import android.widget.Toast;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 
 public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
     private static final int FILE_CHOOSER_REQUEST = 100;
+    private static final String TAG = "PDFImport";
     
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -26,26 +34,32 @@ public class MainActivity extends Activity {
         webView = new WebView(this);
         webView.setWebViewClient(new WebViewClient());
         
-        // دعم رفع الملفات
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                Log.d(TAG, "onShowFileChooser called");
+                
                 if (filePathCallback != null) {
                     filePathCallback.onReceiveValue(null);
+                    filePathCallback = null;
                 }
+                
                 filePathCallback = callback;
                 
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("application/pdf");
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf", "application/x-pdf"});
                 
                 try {
-                    startActivityForResult(Intent.createChooser(intent, "Select PDF"), FILE_CHOOSER_REQUEST);
+                    startActivityForResult(Intent.createChooser(intent, "Select PDF File"), FILE_CHOOSER_REQUEST);
+                    return true;
                 } catch (Exception e) {
+                    Log.e(TAG, "Error opening file chooser", e);
+                    Toast.makeText(MainActivity.this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
                     filePathCallback = null;
                     return false;
                 }
-                return true;
             }
         });
         
@@ -60,9 +74,9 @@ public class MainActivity extends Activity {
         settings.setSupportZoom(true);
         settings.setBuiltInZoomControls(true);
         settings.setDisplayZoomControls(false);
-        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccessFromFileURLs(true);
         settings.setAllowUniversalAccessFromFileURLs(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
         
         webView.loadUrl("file:///android_asset/www/index.html");
         
@@ -73,16 +87,20 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         
+        Log.d(TAG, "onActivityResult: requestCode=" + requestCode + ", resultCode=" + resultCode);
+        
         if (requestCode == FILE_CHOOSER_REQUEST) {
-            if (filePathCallback == null) return;
+            if (filePathCallback == null) {
+                Log.e(TAG, "filePathCallback is null");
+                return;
+            }
             
             Uri[] results = null;
             
-            if (resultCode == Activity.RESULT_OK && data != null) {
-                String dataString = data.getDataString();
-                if (dataString != null) {
-                    results = new Uri[]{Uri.parse(dataString)};
-                }
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+                Uri uri = data.getData();
+                Log.d(TAG, "Selected URI: " + uri.toString());
+                results = new Uri[]{uri};
             }
             
             filePathCallback.onReceiveValue(results);

@@ -21,18 +21,28 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
     
     - name: Install dependencies
       run: |
-        pip install PyMuPDF pdfplumber pdfminer.six
-        pip install arabic-reshaper python-bidi langdetect
-        pip install pytest pytest-cov
+        pip install PyMuPDF==1.23.8
+        pip install pdfplumber==0.10.3
+        pip install pdfminer.six==20221105
+        pip install Pillow==10.0.0
+        pip install numpy==1.24.3
+        pip install opencv-python-headless==4.8.0.74
+        pip install arabic-reshaper==3.0.0
+        pip install python-bidi==0.4.2
+        pip install langdetect==1.0.9
+        pip install pandas==2.0.3
+        pip install loguru==0.7.2
+        pip install pytest==7.4.0
+        pip install pytest-cov==4.1.0
     
     - name: Run Python tests
       run: |
@@ -44,10 +54,10 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Set up JDK 17
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -68,21 +78,21 @@ jobs:
     
     - name: Upload Debug APK
       if: github.event_name == 'pull_request' || github.event.inputs.build_type == 'debug'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/
     
     - name: Upload Release APK
       if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') || github.event.inputs.build_type == 'release'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: app-release
         path: app/build/outputs/apk/release/
     
     - name: Create Release
       if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: |
           app/build/outputs/apk/release/*.apk

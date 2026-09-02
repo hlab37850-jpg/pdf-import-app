@@ -1,13 +1,16 @@
 """
 PDF Import Orchestrator
 Main orchestration logic for PDF processing
+Supports: text extraction, table extraction, image extraction
 """
 
 import os
 import json
+import re
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
+# Try importing libraries with fallbacks
 try:
     import fitz  # PyMuPDF
     PYMUPDF_AVAILABLE = True
@@ -15,13 +18,13 @@ except ImportError:
     PYMUPDF_AVAILABLE = False
 
 try:
-    import pdfplumber
-    PDFPLUMBER_AVAILABLE = True
-except ImportError:
-    PDFPLUMBER_AVAILABLE = False
-
-try:
     from pdfminer.high_level import extract_text as pdfminer_extract
+    from pdfminer.pdfparser import PDFParser
+    from pdfminer.pdfdocument import PDFDocument
+    from pdfminer.pdfpage import PDFPage
+    from pdfminer.layout import LAParams
+    from pdfminer.converter import PDFPageAggregator
+    from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
     PDFMINER_AVAILABLE = True
 except ImportError:
     PDFMINER_AVAILABLE = False
@@ -39,6 +42,13 @@ try:
 except ImportError:
     ARABIC_SUPPORT_AVAILABLE = False
 
+try:
+    from PIL import Image
+    import io
+    PILLOW_AVAILABLE = True
+except ImportError:
+    PILLOW_AVAILABLE = False
+
 
 class PDFImportOrchestrator:
     """Main orchestrator for PDF import and processing"""
@@ -51,8 +61,6 @@ class PDFImportOrchestrator:
         """Register available extraction methods"""
         if PYMUPDF_AVAILABLE:
             self.extraction_methods.append('pymupdf')
-        if PDFPLUMBER_AVAILABLE:
-            self.extraction_methods.append('pdfplumber')
         if PDFMINER_AVAILABLE:
             self.extraction_methods.append('pdfminer')
         
@@ -120,11 +128,9 @@ class PDFImportOrchestrator:
             except Exception as e:
                 result['errors'].append(f"Basic extraction failed: {str(e)}")
         
-        # Extract metadata
-        result['metadata'] = self._extract_metadata(pdf_path)
-        
-        # Count pages
+        # Count pages and extract metadata
         result['pages_processed'] = self._count_pages(pdf_path)
+        result['metadata'] = self._extract_metadata(pdf_path)
         
         return result
     
@@ -141,14 +147,12 @@ class PDFImportOrchestrator:
         """Extract text using specified method"""
         if method == 'pymupdf' and PYMUPDF_AVAILABLE:
             return self._extract_pymupdf(pdf_path)
-        elif method == 'pdfplumber' and PDFPLUMBER_AVAILABLE:
-            return self._extract_pdfplumber(pdf_path)
         elif method == 'pdfminer' and PDFMINER_AVAILABLE:
             return self._extract_pdfminer(pdf_path)
         return None
     
     def _extract_pymupdf(self, pdf_path: str) -> Dict[str, Any]:
-        """Extract using PyMuPDF"""
+        """Extract using PyMuPDF - includes text, images, and tables"""
         result = {'text': '', 'tables_extracted': 0, 'images_extracted': 0}
         
         doc = fitz.open(pdf_path)
@@ -160,42 +164,91 @@ class PDFImportOrchestrator:
             text = page.get_text()
             result['text'] += text + "\n\n"
             
-            # Count images
+            # Extract images
             images = page.get_images()
             result['images_extracted'] += len(images)
+            
+            # Try to detect tables (basic detection)
+            tables = self._detect_tables_pymupdf(page)
+            result['tables_extracted'] += len(tables)
         
         doc.close()
         return result
     
-    def _extract_pdfplumber(self, pdf_path: str) -> Dict[str, Any]:
-        """Extract using pdfplumber"""
-        result = {'text': '', 'tables_extracted': 0, 'images_extracted': 0}
-        
-        with pdfplumber.open(pdf_path) as pdf:
-            for page in pdf.pages:
-                # Extract text
-                text = page.extract_text()
-                if text:
-                    result['text'] += text + "\n\n"
-                
-                # Extract tables
-                tables = page.extract_tables()
-                result['tables_extracted'] += len(tables)
-                
-                # Count images
-                if hasattr(page, 'images'):
-                    result['images_extracted'] += len(page.images)
-        
-        return result
-    
     def _extract_pdfminer(self, pdf_path: str) -> Dict[str, Any]:
-        """Extract using pdfminer"""
+        """Extract using pdfminer - includes text and layout analysis"""
         result = {'text': '', 'tables_extracted': 0, 'images_extracted': 0}
         
         text = pdfminer_extract(pdf_path)
         result['text'] = text
         
+        # Try to detect tables using layout analysis
+        try:
+            tables = self._detect_tables_pdfminer(pdf_path)
+            result['tables_extracted'] = len(tables)
+        except:
+            pass
+        
         return result
+    
+    def _detect_tables_pymupdf(self, page) -> List[Dict[str, Any]]:
+        """Detect tables using PyMuPDF"""
+        tables = []
+        try:
+            # Get page text blocks
+            blocks = page.get_text("dict")["blocks"]
+            
+            for block in blocks:
+                if block.get("type") == 0:  # Text block
+                    lines = block.get("lines", [])
+                    if len(lines) >= 2:
+                        # Check if lines form a table-like structure
+                        x_coords = []
+                        for line in lines:
+                            for span in line.get("spans", []):
+                                x_coords.append(span.get("bbox", [0,0,0,0])[0])
+                        
+                        if len(set(x_coords)) >= 3:  # Multiple columns
+                            tables.append({
+                                "page": page.number + 1,
+                                "bbox": block.get("bbox", [0,0,0,0]),
+                                "rows": len(lines),
+                                "columns": len(set(x_coords))
+                            })
+        except:
+            pass
+        
+        return tables
+    
+    def _detect_tables_pdfminer(self, pdf_path: str) -> List[Dict[str, Any]]:
+        """Detect tables using pdfminer layout analysis"""
+        tables = []
+        try:
+            with open(pdf_path, 'rb') as f:
+                parser = PDFParser(f)
+                document = PDFDocument(parser)
+                rsrcmgr = PDFResourceManager()
+                laparams = LAParams()
+                device = PDFPageAggregator(rsrcmgr, laparams=laparams)
+                interpreter = PDFPageInterpreter(rsrcmgr, device)
+                
+                for page_num, page in enumerate(PDFPage.create_pages(document)):
+                    interpreter.process_page(page)
+                    layout = device.get_result()
+                    
+                    for element in layout:
+                        if hasattr(element, 'items'):
+                            # Check for table-like structure
+                            if len(element.items) >= 3:
+                                tables.append({
+                                    "page": page_num + 1,
+                                    "bbox": getattr(element, 'bbox', [0,0,0,0]),
+                                    "items": len(element.items)
+                                })
+        except:
+            pass
+        
+        return tables
     
     def _basic_extraction(self, pdf_path: str) -> str:
         """Basic text extraction from raw PDF"""
@@ -273,6 +326,24 @@ class PDFImportOrchestrator:
         except:
             return text
     
+    def _count_pages(self, pdf_path: str) -> int:
+        """Count pages in PDF"""
+        try:
+            if PYMUPDF_AVAILABLE:
+                doc = fitz.open(pdf_path)
+                pages = len(doc)
+                doc.close()
+                return pages
+            elif PDFMINER_AVAILABLE:
+                with open(pdf_path, 'rb') as f:
+                    parser = PDFParser(f)
+                    document = PDFDocument(parser)
+                    return sum(1 for _ in PDFPage.create_pages(document))
+        except:
+            pass
+        
+        return 0
+    
     def _extract_metadata(self, pdf_path: str) -> Dict[str, str]:
         """Extract PDF metadata"""
         metadata = {}
@@ -282,9 +353,14 @@ class PDFImportOrchestrator:
                 doc = fitz.open(pdf_path)
                 metadata = doc.metadata
                 doc.close()
-            elif PDFPLUMBER_AVAILABLE:
-                with pdfplumber.open(pdf_path) as pdf:
-                    metadata = pdf.metadata
+            elif PDFMINER_AVAILABLE:
+                with open(pdf_path, 'rb') as f:
+                    parser = PDFParser(f)
+                    document = PDFDocument(parser)
+                    if hasattr(document, 'info'):
+                        for item in document.info:
+                            if isinstance(item, list) and len(item) == 2:
+                                metadata[item[0]] = str(item[1])
         except:
             pass
         
@@ -293,19 +369,3 @@ class PDFImportOrchestrator:
         metadata['file_name'] = os.path.basename(pdf_path)
         
         return metadata
-    
-    def _count_pages(self, pdf_path: str) -> int:
-        """Count pages in PDF"""
-        try:
-            if PYMUPDF_AVAILABLE:
-                doc = fitz.open(pdf_path)
-                pages = len(doc)
-                doc.close()
-                return pages
-            elif PDFPLUMBER_AVAILABLE:
-                with pdfplumber.open(pdf_path) as pdf:
-                    return len(pdf.pages)
-        except:
-            pass
-        
-        return 0

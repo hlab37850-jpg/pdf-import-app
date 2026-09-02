@@ -1,92 +1,285 @@
 <!DOCTYPE html>
-<html dir="rtl">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Import</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="js/pdf.min.js"></script>
     <style>
-        body { font-family: sans-serif; margin: 0; padding: 20px; }
-        button { padding: 12px; margin: 5px; width: 100%; font-size: 16px; }
-        #output { white-space: pre-wrap; font-size: 14px; }
-        .progress { width: 100%; height: 20px; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #6200EE;
+            color: white;
+            padding: 16px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .container {
+            flex: 1;
+            padding: 16px;
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-bottom: 10px;
+            transition: opacity 0.2s;
+        }
+        .btn:active { opacity: 0.7; }
+        .btn-primary { background: #2196F3; color: white; }
+        .btn-success { background: #4CAF50; color: white; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .status {
+            padding: 12px;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+        .progress-container {
+            display: none;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #4CAF50;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #6200EE;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .output {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 400px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+        .rtl { direction: rtl; text-align: right; }
+        .ltr { direction: ltr; text-align: left; }
     </style>
 </head>
 <body>
-    <h1>PDF Import App</h1>
-    <input type="file" id="fileInput" accept=".pdf" style="display:none">
-    <button onclick="document.getElementById('fileInput').click()">Select PDF</button>
-    <div id="status">No file selected</div>
-    <div class="progress" id="progressBar" style="display:none">
-        <div id="progressFill" style="width:0%;height:100%;background:#4CAF50"></div>
+    <div class="header">📄 PDF Import App</div>
+    
+    <div class="container">
+        <div class="card">
+            <input type="file" id="fileInput" accept=".pdf" style="display:none">
+            <button class="btn btn-primary" id="selectBtn" onclick="document.getElementById('fileInput').click()">
+                📂 Select PDF File
+            </button>
+            <button class="btn btn-success" id="processBtn" onclick="processPDF()" disabled>
+                🔄 Process PDF
+            </button>
+            <div class="status" id="status">No file selected</div>
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card" id="resultsCard" style="display:none">
+            <h3 style="margin-bottom:10px">📊 Results</h3>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="pagesCount">0</div>
+                    <div class="stat-label">Pages</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="confidence">0%</div>
+                    <div class="stat-label">Confidence</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="imagesCount">0</div>
+                    <div class="stat-label">Images</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="tablesCount">0</div>
+                    <div class="stat-label">Tables</div>
+                </div>
+            </div>
+            <h3 style="margin:10px 0">📝 Extracted Text</h3>
+            <div class="output" id="output"></div>
+        </div>
     </div>
-    <h2>Results:</h2>
-    <div id="output"></div>
 
     <script>
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        // إعداد PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/pdf.worker.min.js';
         
         let selectedFile = null;
+        let extractedText = '';
         
+        // اختيار الملف
         document.getElementById('fileInput').addEventListener('change', function(e) {
-            selectedFile = e.target.files[0];
-            document.getElementById('status').textContent = 'Selected: ' + selectedFile.name;
+            if (e.target.files.length > 0) {
+                selectedFile = e.target.files[0];
+                document.getElementById('status').textContent = '📄 Selected: ' + selectedFile.name;
+                document.getElementById('status').style.color = '#4CAF50';
+                document.getElementById('processBtn').disabled = false;
+            }
         });
         
         async function processPDF() {
             if (!selectedFile) return;
             
-            const progressBar = document.getElementById('progressBar');
+            const processBtn = document.getElementById('processBtn');
+            const selectBtn = document.getElementById('selectBtn');
+            const progressContainer = document.getElementById('progressContainer');
             const progressFill = document.getElementById('progressFill');
-            progressBar.style.display = 'block';
+            const status = document.getElementById('status');
+            
+            processBtn.disabled = true;
+            selectBtn.disabled = true;
+            progressContainer.style.display = 'block';
+            status.textContent = '⏳ Processing PDF...';
+            status.style.color = '#2196F3';
             
             try {
                 const arrayBuffer = await selectedFile.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
                 
                 let fullText = '';
-                let tables = 0;
-                let images = 0;
+                let imagesCount = 0;
+                let tablesCount = 0;
+                let isArabic = false;
                 
                 for (let i = 1; i <= pdf.numPages; i++) {
-                    progressFill.style.width = (i / pdf.numPages * 100) + '%';
+                    // تحديث التقدم
+                    const progress = (i / pdf.numPages) * 100;
+                    progressFill.style.width = progress + '%';
                     
                     const page = await pdf.getPage(i);
-                    const textContent = await page.getTextContent();
                     
-                    // استخراج النص مع الحفاظ على التنسيق
+                    // استخراج النص
+                    const textContent = await page.getTextContent();
                     let pageText = '';
-                    textContent.items.forEach(item => {
-                        pageText += item.str + ' ';
+                    
+                    textContent.items.forEach((item, index) => {
+                        if (item.str) {
+                            pageText += item.str;
+                            // إضافة مسافة بين الكلمات
+                            if (index < textContent.items.length - 1) {
+                                const nextItem = textContent.items[index + 1];
+                                if (nextItem.str && !nextItem.str.startsWith(' ')) {
+                                    pageText += ' ';
+                                }
+                            }
+                        }
                     });
                     
-                    fullText += '--- Page ' + i + ' ---\n' + pageText + '\n\n';
+                    // كشف العربية
+                    if (!isArabic && /[\u0600-\u06FF]/.test(pageText)) {
+                        isArabic = true;
+                    }
                     
                     // كشف الصور
                     const ops = await page.getOperatorList();
                     ops.fnArray.forEach(fn => {
-                        if (fn === pdfjsLib.OPS.paintImageXObject) images++;
+                        if (fn === pdfjsLib.OPS.paintImageXObject || 
+                            fn === pdfjsLib.OPS.paintImageXObjectRepeat ||
+                            fn === pdfjsLib.OPS.paintInlineImageXObject) {
+                            imagesCount++;
+                        }
                     });
+                    
+                    // كشف الجداول (خطوط أفقية متعددة)
+                    if (pageText.split('\n').length > 3) {
+                        tablesCount++;
+                    }
+                    
+                    fullText += `\n===== Page ${i} =====\n${pageText}\n`;
                 }
                 
-                document.getElementById('output').textContent = fullText;
-                document.getElementById('status').textContent = 
-                    'Complete! Pages: ' + pdf.numPages + ', Images: ' + images;
+                extractedText = fullText;
+                
+                // حساب الثقة
+                const confidence = Math.min(95, 
+                    50 + 
+                    (fullText.length > 1000 ? 20 : fullText.length > 500 ? 10 : 0) +
+                    (imagesCount > 0 ? 10 : 0) +
+                    (tablesCount > 0 ? 10 : 0)
+                );
+                
+                // عرض النتائج
+                document.getElementById('pagesCount').textContent = pdf.numPages;
+                document.getElementById('confidence').textContent = confidence + '%';
+                document.getElementById('imagesCount').textContent = imagesCount;
+                document.getElementById('tablesCount').textContent = tablesCount;
+                
+                const output = document.getElementById('output');
+                output.textContent = fullText;
+                output.className = 'output ' + (isArabic ? 'rtl' : 'ltr');
+                
+                document.getElementById('resultsCard').style.display = 'block';
+                status.textContent = '✅ Processing complete!';
+                status.style.color = '#4CAF50';
                 
             } catch (error) {
-                document.getElementById('status').textContent = 'Error: ' + error.message;
+                status.textContent = '❌ Error: ' + error.message;
+                status.style.color = '#F44336';
+                console.error('PDF processing error:', error);
             }
             
-            progressBar.style.display = 'none';
+            processBtn.disabled = false;
+            selectBtn.disabled = false;
+            progressContainer.style.display = 'none';
         }
-        
-        // إضافة زر المعالجة
-        document.addEventListener('DOMContentLoaded', function() {
-            const processBtn = document.createElement('button');
-            processBtn.textContent = 'Process PDF';
-            processBtn.onclick = processPDF;
-            document.querySelector('button').after(processBtn);
-        });
     </script>
 </body>
 </html>

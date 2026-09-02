@@ -6,10 +6,17 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebSettings;
 import android.webkit.WebChromeClient;
+import android.webkit.ValueCallback;
+import android.net.Uri;
+import android.content.Intent;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.annotation.SuppressLint;
 
 public class MainActivity extends Activity {
     private WebView webView;
     
+    @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -21,8 +28,17 @@ public class MainActivity extends Activity {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
         settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(true);
+        settings.setSupportZoom(true);
+        settings.setBuiltInZoomControls(true);
+        settings.setDisplayZoomControls(false);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         
+        // تحميل الصفحة المحلية
         webView.loadUrl("file:///android_asset/www/index.html");
         
         setContentView(webView);
@@ -35,5 +51,13 @@ public class MainActivity extends Activity {
         } else {
             super.onBackPressed();
         }
+    }
+    
+    @Override
+    protected void onDestroy() {
+        if (webView != null) {
+            webView.destroy();
+        }
+        super.onDestroy();
     }
 }

@@ -14,9 +14,22 @@ android {
         versionName "1.0.0"
     }
 
+    signingConfigs {
+        release {
+            storeFile file("../keystore/release.keystore")
+            storePassword "pdfimport2024"
+            keyAlias "pdfimport"
+            keyPassword "pdfimport2024"
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            signingConfig signingConfigs.debug
         }
     }
 

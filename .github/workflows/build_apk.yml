@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-apk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     
     steps:
     - uses: actions/checkout@v4
@@ -32,14 +32,15 @@ jobs:
           zlib1g-dev \
           libncurses5-dev \
           libncursesw5-dev \
-          libtinfo5 \
           cmake \
           libffi-dev \
-          libssl-dev
+          libssl-dev \
+          python3-pip \
+          python3-venv
     
     - name: Install Buildozer
       run: |
-        pip install buildozer
+        pip install --upgrade buildozer
         pip install cython==0.29.36
     
     - name: Build APK

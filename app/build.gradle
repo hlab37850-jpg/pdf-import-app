@@ -23,17 +23,20 @@ android {
             version "3.8"
             
             pip {
-                // مكتبات متوافقة مع Chaquopy (تحتوي على wheels جاهزة)
+                // استخدام مكتبات من مستودع Chaquopy مباشرة
                 install "PyMuPDF==1.22.5"
                 install "pdfminer.six==20221105"
                 install "Pillow==9.5.0"
                 install "numpy==1.24.3"
+                install "opencv-python-headless==4.8.0.74"
                 install "arabic-reshaper==3.0.0"
                 install "python-bidi==0.4.2"
                 install "langdetect==1.0.9"
+                install "pandas==2.0.3"
+                install "loguru==0.7.2"
                 
-                // pdfplumber غير متوافق مع Chaquopy مباشرة
-                // نستخدم pdfminer.six بدلاً منه لاستخراج الجداول
+                // إضافة مستودع Chaquopy للمكتبات الجاهزة
+                options "--extra-index-url", "https://chaquo.com/pypi-13.1"
             }
         }
     }
@@ -43,10 +46,6 @@ android {
             minifyEnabled false
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            
-            ndk {
-                abiFilters "arm64-v8a"
-            }
         }
         debug {
             minifyEnabled false
